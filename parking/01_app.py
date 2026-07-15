@@ -63,7 +63,6 @@ df["위도"] = pd.to_numeric(df["위도"], errors="coerce")
 df["경도"] = pd.to_numeric(df["경도"], errors="coerce")
 
 parking_layer = pdk.Layer(
-    ...
     data=map_df
 )
 
