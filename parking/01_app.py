@@ -62,6 +62,7 @@ for c in required:
 df["위도"] = pd.to_numeric(df["위도"], errors="coerce")
 df["경도"] = pd.to_numeric(df["경도"], errors="coerce")
 
+map_df = result.dropna(subset=["위도", "경도"])
 parking_layer = pdk.Layer(
     data=map_df
 )
