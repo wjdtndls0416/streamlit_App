@@ -10,14 +10,13 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🅿️ 공영주차장 요금 안내 서비스")
+st.title("🅿️ 공영주차장 안내 서비스")
 
 # -------------------------
 # CSV 읽기
 # -------------------------
-
 def load_csv(file):
-    for enc in ["utf-8","utf-8-sig","cp949","euc-kr"]:
+    for enc in ["utf-8", "utf-8-sig", "cp949", "euc-kr"]:
         try:
             file.seek(0)
             return pd.read_csv(file, encoding=enc)
@@ -37,36 +36,46 @@ if df is None:
     st.stop()
 
 # -------------------------
-# 컬럼명 자동 변환
+# 컬럼명 변경
 # -------------------------
-
 rename = {
-    "소재지도로명주소":"주소",
-    "주차기본요금":"기본요금",
-    "추가단위요금":"추가요금"
+    "소재지도로명주소": "주소",
+    "기본 주차 요금": "기본요금",
+    "기본 주차 시간(분 단위)": "기본시간",
+    "추가 단위 요금": "추가요금",
+    "추가 단위 시간(분 단위)": "추가시간",
+    "일 최대 요금": "일최대요금",
+    "총 주차면": "주차면수",
+    "전화번호": "전화번호",
+    "유무료구분명": "유무료",
+    "야간무료개방여부명": "야간개방"
 }
 
 df.rename(columns=rename, inplace=True)
 
-required = ["주차장명","주소","위도","경도","기본요금"]
+required = ["주차장명", "주소", "위도", "경도"]
 
 for c in required:
     if c not in df.columns:
         st.error(f"{c} 컬럼이 없습니다.")
         st.stop()
 
-if "추가요금" not in df.columns:
-    df["추가요금"]="-"
+# 없는 컬럼 생성
+for col in ["기본요금","기본시간","추가요금","추가시간","일최대요금",
+            "주차면수","전화번호","유무료","야간개방"]:
+    if col not in df.columns:
+        df[col] = "-"
 
-df["위도"]=pd.to_numeric(df["위도"],errors="coerce")
-df["경도"]=pd.to_numeric(df["경도"],errors="coerce")
+df.fillna("-", inplace=True)
 
-df=df.dropna(subset=["위도","경도"])
+df["위도"] = pd.to_numeric(df["위도"], errors="coerce")
+df["경도"] = pd.to_numeric(df["경도"], errors="coerce")
+
+df = df.dropna(subset=["위도", "경도"])
 
 # -------------------------
 # 주소 검색
 # -------------------------
-
 st.header("📍 주소 검색")
 
 address = st.text_input("예) 서울특별시 중구 세종대로 110")
@@ -79,7 +88,12 @@ if address:
     geolocator = Nominatim(user_agent="parking")
 
     try:
-        location = geolocator.geocode(address)
+
+        location = geolocator.geocode(
+            address,
+            country_codes="kr",
+            timeout=10
+        )
 
         if location:
 
@@ -89,33 +103,32 @@ if address:
         else:
             st.error("주소를 찾을 수 없습니다.")
 
-    except:
-        st.error("주소 검색 실패")
+    except Exception as e:
+        st.error(f"주소 검색 실패 : {e}")
 
 # -------------------------
 # 거리 계산
 # -------------------------
+def distance(lat1, lon1, lat2, lon2):
 
-def distance(lat1,lon1,lat2,lon2):
+    R = 6371
 
-    R=6371
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
 
-    dlat=radians(lat2-lat1)
-    dlon=radians(lon2-lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * \
+        cos(radians(lat2)) * sin(dlon / 2) ** 2
 
-    a=sin(dlat/2)**2+cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
-    c=2*atan2(sqrt(a),sqrt(1-a))
-
-    return R*c
+    return R * c
 
 # -------------------------
-# 가장 가까운 주차장 안내
+# 가장 가까운 주차장
 # -------------------------
-
 if user_lat is not None:
 
-    df["거리"]=df.apply(
+    df["거리"] = df.apply(
         lambda x: distance(
             user_lat,
             user_lon,
@@ -125,29 +138,52 @@ if user_lat is not None:
         axis=1
     )
 
-    nearest=df.sort_values("거리").iloc[0]
+    nearest = df.sort_values("거리").iloc[0]
 
     st.success("가장 가까운 공영주차장")
 
     st.markdown(f"""
-### 🚗 {nearest['주차장명']}
+# 🚗 {nearest['주차장명']}
 
-**주소**
-
+### 📍 주소
 {nearest['주소']}
 
-**기본요금**
+### 💰 주차요금
 
-{nearest['기본요금']}
+- 기본요금 : {nearest['기본요금']}원
+- 기본시간 : {nearest['기본시간']}분
+- 추가요금 : {nearest['추가요금']}원
+- 추가시간 : {nearest['추가시간']}분
+- 일 최대요금 : {nearest['일최대요금']}원
 
-**추가요금**
+### 🚘 주차장 정보
 
-{nearest['추가요금']}
+- 총 주차면수 : {nearest['주차면수']}면
+- 유무료 : {nearest['유무료']}
+- 야간 무료개방 : {nearest['야간개방']}
+- 전화번호 : {nearest['전화번호']}
 
-**거리**
+### 📏 현재 위치와 거리
 
 {nearest['거리']:.2f} km
 """)
+
+    st.header("📌 가까운 공영주차장 TOP 5")
+
+    nearest5 = df.sort_values("거리").head(5)
+
+    st.dataframe(
+        nearest5[
+            [
+                "주차장명",
+                "거리",
+                "기본요금",
+                "일최대요금",
+                "주차면수"
+            ]
+        ],
+        use_container_width=True
+    )
 
 # -------------------------
 # 지도
@@ -157,52 +193,66 @@ parking_layer = pdk.Layer(
     "ScatterplotLayer",
     data=df,
     get_position="[경도, 위도]",
-    get_radius=45,
+    get_radius=120,
     get_fill_color=[0,120,255,180],
     pickable=True
 )
 
-layers=[parking_layer]
+layers = [parking_layer]
 
 if user_lat is not None:
 
-    user_df=pd.DataFrame({
+    nearest_df = pd.DataFrame({
+        "위도":[nearest["위도"]],
+        "경도":[nearest["경도"]]
+    })
+
+    nearest_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=nearest_df,
+        get_position="[경도, 위도]",
+        get_radius=180,
+        get_fill_color=[0,255,0,255]
+    )
+
+    user_df = pd.DataFrame({
         "위도":[user_lat],
         "경도":[user_lon]
     })
 
-    user_layer=pdk.Layer(
+    user_layer = pdk.Layer(
         "ScatterplotLayer",
         data=user_df,
         get_position="[경도, 위도]",
-        get_radius=80,
-        get_fill_color=[255,0,0,220]
+        get_radius=180,
+        get_fill_color=[255,0,0,255]
     )
 
+    layers.append(nearest_layer)
     layers.append(user_layer)
 
-    center_lat=user_lat
-    center_lon=user_lon
+    center_lat = user_lat
+    center_lon = user_lon
 
 else:
 
-    center_lat=df["위도"].mean()
-    center_lon=df["경도"].mean()
+    center_lat = df["위도"].mean()
+    center_lon = df["경도"].mean()
 
-tooltip={
-"html":"""
-<b>{주차장명}</b><br>
+tooltip = {
+    "html": """
+    <b>{주차장명}</b><br>
+    주소 : {주소}<br><br>
 
-주소 : {주소}<br>
-
-기본요금 : {기본요금}<br>
-
-추가요금 : {추가요금}
-""",
-"style":{
-"backgroundColor":"steelblue",
-"color":"white"
-}
+    기본요금 : {기본요금}원<br>
+    기본시간 : {기본시간}분<br>
+    일 최대요금 : {일최대요금}원<br>
+    주차면수 : {주차면수}면
+    """,
+    "style": {
+        "backgroundColor":"steelblue",
+        "color":"white"
+    }
 }
 
 st.pydeck_chart(
@@ -211,7 +261,7 @@ st.pydeck_chart(
         initial_view_state=pdk.ViewState(
             latitude=center_lat,
             longitude=center_lon,
-            zoom=12
+            zoom=14
         ),
         tooltip=tooltip
     )
@@ -220,7 +270,9 @@ st.pydeck_chart(
 # -------------------------
 # 전체 목록
 # -------------------------
-
 st.header("📋 공영주차장 목록")
 
-st.dataframe(df,use_container_width=True)
+st.dataframe(
+    df,
+    use_container_width=True
+)
