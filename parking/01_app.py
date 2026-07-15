@@ -1,192 +1,226 @@
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
+from geopy.geocoders import Nominatim
+from math import radians, sin, cos, sqrt, atan2
 
-# -----------------------------
-# 페이지 설정
-# -----------------------------
 st.set_page_config(
     page_title="공영주차장 안내",
     page_icon="🅿️",
     layout="wide"
 )
 
-st.title("🅿️ 공영주차장 정보 제공 서비스")
+st.title("🅿️ 공영주차장 요금 안내 서비스")
 
-st.write("CSV 파일을 업로드하면 주소 검색과 지도에서 주차요금을 확인할 수 있습니다.")
+# -------------------------
+# CSV 읽기
+# -------------------------
 
-# -----------------------------
-# CSV 읽기 함수
-# -----------------------------
 def load_csv(file):
-
-    encodings = [
-        "utf-8",
-        "utf-8-sig",
-        "cp949",
-        "euc-kr"
-    ]
-
-    for enc in encodings:
+    for enc in ["utf-8","utf-8-sig","cp949","euc-kr"]:
         try:
             file.seek(0)
-            df = pd.read_csv(file, encoding=enc)
-            return df, enc
+            return pd.read_csv(file, encoding=enc)
         except:
-            continue
+            pass
+    return None
 
-    return None, None
+uploaded = st.file_uploader("공영주차장 CSV 업로드", type="csv")
 
-
-uploaded_file = st.file_uploader(
-    "CSV 업로드",
-    type=["csv"]
-)
-
-if uploaded_file is None:
-    st.info("공영주차장 CSV를 업로드하세요.")
+if uploaded is None:
     st.stop()
 
-# -----------------------------
-# CSV 읽기
-# -----------------------------
-df, encoding = load_csv(uploaded_file)
+df = load_csv(uploaded)
 
 if df is None:
-    st.error("CSV 파일을 읽을 수 없습니다.")
+    st.error("CSV를 읽을 수 없습니다.")
     st.stop()
 
-st.success(f"파일을 성공적으로 읽었습니다. (인코딩 : {encoding})")
+# -------------------------
+# 컬럼명 자동 변환
+# -------------------------
 
-# -----------------------------
-# 컬럼 확인
-# -----------------------------
-st.subheader("CSV 컬럼")
+rename = {
+    "소재지도로명주소":"주소",
+    "주차기본요금":"기본요금",
+    "추가단위요금":"추가요금"
+}
 
-st.write(df.columns.tolist())
+df.rename(columns=rename, inplace=True)
 
-required_columns = [
-    "주차장명",
-    "주소",
-    "위도",
-    "경도",
-    "기본요금",
-    "추가요금"
-]
+required = ["주차장명","주소","위도","경도","기본요금"]
 
-missing = [c for c in required_columns if c not in df.columns]
+for c in required:
+    if c not in df.columns:
+        st.error(f"{c} 컬럼이 없습니다.")
+        st.stop()
 
-if len(missing) > 0:
+if "추가요금" not in df.columns:
+    df["추가요금"]="-"
 
-    st.error("다음 컬럼이 없습니다.")
+df["위도"]=pd.to_numeric(df["위도"],errors="coerce")
+df["경도"]=pd.to_numeric(df["경도"],errors="coerce")
 
-    st.write(missing)
+df=df.dropna(subset=["위도","경도"])
 
-    st.stop()
-
-# -----------------------------
-# 데이터 미리보기
-# -----------------------------
-with st.expander("데이터 보기"):
-
-    st.dataframe(df)
-
-# -----------------------------
+# -------------------------
 # 주소 검색
-# -----------------------------
-st.header("🔍 주소 검색")
+# -------------------------
 
-keyword = st.text_input(
-    "주소를 입력하세요."
-)
+st.header("📍 주소 검색")
 
-if keyword:
+address = st.text_input("예) 서울특별시 중구 세종대로 110")
 
-    result = df[
-        df["주소"].astype(str).str.contains(
-            keyword,
-            case=False,
-            na=False
-        )
-    ]
+user_lat = None
+user_lon = None
 
-    if len(result) == 0:
+if address:
 
-        st.warning("검색 결과가 없습니다.")
+    geolocator = Nominatim(user_agent="parking")
 
-    else:
+    try:
+        location = geolocator.geocode(address)
 
-        st.success(f"{len(result)}개의 주차장을 찾았습니다.")
+        if location:
 
-        for _, row in result.iterrows():
+            user_lat = location.latitude
+            user_lon = location.longitude
 
-            with st.container():
+        else:
+            st.error("주소를 찾을 수 없습니다.")
 
-                st.markdown(f"### 🚗 {row['주차장명']}")
+    except:
+        st.error("주소 검색 실패")
 
-                st.write(f"**주소** : {row['주소']}")
-                st.write(f"**기본요금** : {row['기본요금']}")
-                st.write(f"**추가요금** : {row['추가요금']}")
+# -------------------------
+# 거리 계산
+# -------------------------
 
-                st.divider()
+def distance(lat1,lon1,lat2,lon2):
 
-# -----------------------------
+    R=6371
+
+    dlat=radians(lat2-lat1)
+    dlon=radians(lon2-lon1)
+
+    a=sin(dlat/2)**2+cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+
+    c=2*atan2(sqrt(a),sqrt(1-a))
+
+    return R*c
+
+# -------------------------
+# 가장 가까운 주차장 안내
+# -------------------------
+
+if user_lat is not None:
+
+    df["거리"]=df.apply(
+        lambda x: distance(
+            user_lat,
+            user_lon,
+            x["위도"],
+            x["경도"]
+        ),
+        axis=1
+    )
+
+    nearest=df.sort_values("거리").iloc[0]
+
+    st.success("가장 가까운 공영주차장")
+
+    st.markdown(f"""
+### 🚗 {nearest['주차장명']}
+
+**주소**
+
+{nearest['주소']}
+
+**기본요금**
+
+{nearest['기본요금']}
+
+**추가요금**
+
+{nearest['추가요금']}
+
+**거리**
+
+{nearest['거리']:.2f} km
+""")
+
+# -------------------------
 # 지도
-# -----------------------------
-st.header("🗺️ 공영주차장 위치")
+# -------------------------
 
-layer = pdk.Layer(
+parking_layer = pdk.Layer(
     "ScatterplotLayer",
     data=df,
     get_position="[경도, 위도]",
-    get_radius=35,
-    get_fill_color=[0, 102, 255, 180],
-    pickable=True,
-    auto_highlight=True
+    get_radius=45,
+    get_fill_color=[0,120,255,180],
+    pickable=True
 )
 
-tooltip = {
-    "html": """
-<b>주차장명</b><br>
-{주차장명}
-<br><br>
+layers=[parking_layer]
 
-<b>주소</b><br>
-{주소}
-<br><br>
+if user_lat is not None:
 
-<b>기본요금</b><br>
-{기본요금}
-<br><br>
+    user_df=pd.DataFrame({
+        "위도":[user_lat],
+        "경도":[user_lon]
+    })
 
-<b>추가요금</b><br>
-{추가요금}
+    user_layer=pdk.Layer(
+        "ScatterplotLayer",
+        data=user_df,
+        get_position="[경도, 위도]",
+        get_radius=80,
+        get_fill_color=[255,0,0,220]
+    )
+
+    layers.append(user_layer)
+
+    center_lat=user_lat
+    center_lon=user_lon
+
+else:
+
+    center_lat=df["위도"].mean()
+    center_lon=df["경도"].mean()
+
+tooltip={
+"html":"""
+<b>{주차장명}</b><br>
+
+주소 : {주소}<br>
+
+기본요금 : {기본요금}<br>
+
+추가요금 : {추가요금}
 """,
-    "style": {
-        "backgroundColor": "#1E3A8A",
-        "color": "white",
-        "fontSize": "14px"
-    }
+"style":{
+"backgroundColor":"steelblue",
+"color":"white"
+}
 }
 
-view_state = pdk.ViewState(
-    latitude=df["위도"].mean(),
-    longitude=df["경도"].mean(),
-    zoom=11,
-    pitch=0
+st.pydeck_chart(
+    pdk.Deck(
+        layers=layers,
+        initial_view_state=pdk.ViewState(
+            latitude=center_lat,
+            longitude=center_lon,
+            zoom=12
+        ),
+        tooltip=tooltip
+    )
 )
 
-deck = pdk.Deck(
-    layers=[layer],
-    initial_view_state=view_state,
-    tooltip=tooltip
-)
+# -------------------------
+# 전체 목록
+# -------------------------
 
-st.pydeck_chart(deck)
+st.header("📋 공영주차장 목록")
 
-# -----------------------------
-# 요금순 정렬
-# -----------------------------
-st.header("💰 전체 주차장 정보")
-
-st.dataframe(df, use_container_width=True)
+st.dataframe(df,use_container_width=True)
