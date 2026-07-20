@@ -99,7 +99,7 @@ if api_key and video_url:
         col1, col2 = st.columns([1, 3])
 
     with col1:
-        st.image(thumbnail_url, width=100)
+        st.image(thumbnail_url, width=200)
 
     with col2:
         st.markdown("### 📺 선택한 영상")
