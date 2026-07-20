@@ -94,9 +94,9 @@ if api_key and video_url:
 
     if video_id:
     # 작은 썸네일 표시
-    thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+        thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
-    col1, col2 = st.columns([1, 3])
+        col1, col2 = st.columns([1, 3])
 
     with col1:
         st.image(thumbnail_url, width=100)
