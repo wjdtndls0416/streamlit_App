@@ -93,9 +93,19 @@ if api_key and video_url:
     video_id = get_video_id(video_url)
 
     if video_id:
-        st.video(video_url)
+    # 작은 썸네일 표시
+    thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
 
-        if st.button("댓글 분석 시작"):
+    col1, col2 = st.columns([1, 3])
+
+    with col1:
+        st.image(thumbnail_url, width=100)
+
+    with col2:
+        st.markdown("### 📺 선택한 영상")
+        st.write(video_url)
+
+    if st.button("댓글 분석 시작"):
             with st.spinner("댓글 수집 중..."):
                 try:
                     df = get_comments(api_key, video_id, max_comments)
