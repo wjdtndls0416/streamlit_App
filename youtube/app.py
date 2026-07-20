@@ -3,7 +3,6 @@ import pandas as pd
 from googleapiclient.discovery import build
 from urllib.parse import urlparse, parse_qs
 from collections import Counter
-from konlpy.tag import Okt
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import re
@@ -68,19 +67,23 @@ def get_comments(api_key, video_id, max_results):
 # 워드클라우드 생성
 # -----------------------------
 def create_wordcloud(texts):
-    okt = Okt()
     text = " ".join(texts)
+
+    # 한글만 추출
     text = re.sub(r"[^가-힣 ]", " ", text)
 
-    nouns = okt.nouns(text)
-    nouns = [n for n in nouns if len(n) >= 2]
+    # 공백 기준 단어 분리
+    words = text.split()
 
-    counts = Counter(nouns)
+    # 한 글자는 제외
+    words = [w for w in words if len(w) >= 2]
+
+    counts = Counter(words)
 
     wc = WordCloud(
         font_path="NanumGothic.ttf",
-        width=800,
-        height=400,
+        width=900,
+        height=450,
         background_color="white"
     ).generate_from_frequencies(counts)
 
